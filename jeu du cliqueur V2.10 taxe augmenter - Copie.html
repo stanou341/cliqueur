@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Ultra Economic Empire V4</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body{
+margin:0;
+background:linear-gradient(135deg,#0f172a,#020617);
+color:white;
+font-family:Segoe UI;
+text-align:center;
+}
+
+.panel{
+background:#111827;
+padding:25px;
+margin:20px auto;
+border-radius:20px;
+width:95%;
+box-shadow:0 0 40px rgba(0,150,255,0.4);
+}
+
+button{
+padding:8px;
+margin:5px;
+border-radius:10px;
+border:none;
+background:#2563eb;
+color:white;
+cursor:pointer;
+position:relative;
+}
+
+button:hover{background:#3b82f6;}
+
+.markets-container{
+display:flex;
+justify-content:space-between;
+gap:10px;
+flex-wrap:wrap;
+}
+
+.market{
+flex:1;
+min-width:300px;
+border:1px solid #1f2937;
+padding:10px;
+border-radius:15px;
+background:#0b1220;
+}
+
+canvas{
+background:#111827;
+border-radius:10px;
+}
+
+.progress{
+height:20px;
+background:#1e293b;
+border-radius:10px;
+overflow:hidden;
+margin:15px;
+}
+
+.bar{
+height:100%;
+width:0%;
+background:#22c55e;
+transition:0.3s;
+}
+
+.click-indicator{
+position:absolute;
+top:-25px;
+left:50%;
+transform:translateX(-50%);
+background:#22c55e;
+color:#000;
+padding:3px 7px;
+border-radius:50%;
+font-weight:bold;
+animation:floatUp 2s forwards;
+pointer-events:none;
+font-size:12px;
+}
+
+@keyframes floatUp{
+0%{opacity:1; transform:translateX(-50%) translateY(0);}
+100%{opacity:0; transform:translateX(-50%) translateY(-50px);}
+}
+
+.rules{
+background:#1e293b;
+padding:10px;
+border-radius:10px;
+margin-bottom:15px;
+text-align:left;
+}
+</style>
+</head>
+<body>
+
+<h1>👑 ULTRA ECONOMIC EMPIRE V4</h1>
+
+<div class="rules">
+<h3>Règles du jeu :</h3>
+<ul>
+<li>Cliquez pour gagner de l'argent.</li>
+<li>Investissez dans les marchés et entreprises pour générer du revenu passif.</li>
+<li>Le gouvernement prélève <span id="taxRateDisplay">2.5%</span> de votre argent chaque seconde.</li>
+<li>Améliorez vos clics, dividendes et réductions de taxe pour progresser plus vite.</li>
+<li>Objectif : atteindre <b>1 000 000 000 000 $</b>.</li>
+</ul>
+</div>
+
+<div class="panel">
+
+<h2>💰 Argent : <span id="money">0</span>$</h2>
+<h3>📈 Revenu passif : <span id="passive">0</span>/sec</h3>
+<h3>🏛️ Taxe gouvernementale : <span id="taxRateDisplayPanel">2.5%</span></h3>
+
+<div class="progress"><div id="bar" class="bar"></div></div>
+
+<button id="clickBtn" onclick="clickMoney()">💵 CLIQUE</button>
+<button onclick="upgradeClick()">⚡ Doubler (<span id="nextDouble">100</span>$)</button>
+
+<hr>
+
+<h2>🌎 BOURSES MONDIALES</h2>
+<div class="markets-container" id="markets"></div>
+
+<hr>
+
+<h2>🏢 INVESTISSEMENTS</h2>
+<div id="investments"></div>
+
+<h2>🔧 AMÉLIORATIONS</h2>
+<div id="upgrades"></div>
+
+<p id="log"></p>
+
+</div>
+
+<script>
+function format(n){
+return Math.floor(n).toLocaleString("fr-FR");
+}
+
+let money=0;
+let passive=0;
+let clickValue=10;
+let doubleCost=100;
+let winGoal=1000000000000;
+
+let dividendBoost=1;
+let crashReduction=0;
+let marketAI=false;
+let superPrestige=false;
+
+/* ===== TAXE MODIFIÉE À 2.5% ===== */
+let taxRate = 0.025; // 2.5%
+
+function updateTaxDisplay(){
+document.getElementById("taxRateDisplay").innerText=(taxRate*100).toFixed(2)+"%";
+document.getElementById("taxRateDisplayPanel").innerText=(taxRate*100).toFixed(2)+"%";
+}
+
+/* ===== MARKETS ===== */
+let markets=[
+{name:"🇺🇸 NY Market",price:100,stocks:0,vol:20,history:[],chart:null},
+{name:"🇪🇺 EU Market",price:120,stocks:0,vol:12,history:[],chart:null},
+{name:"🇯🇵 Asia Market",price:80,stocks:0,vol:28,history:[],chart:null}
+];
+
+const marketsDiv=document.getElementById("markets");
+
+markets.forEach((m,i)=>{
+let div=document.createElement("div");
+div.className="market";
+div.innerHTML=`
+<h4>${m.name}</h4>
+Prix : <span id="price${i}">${format(m.price)}</span>$<br>
+Actions : <span id="stocks${i}">0</span><br>
+<input type="number" id="amount${i}" value="1" min="1">
+<button onclick="buyStock(${i})">Acheter</button>
+<button onclick="sellStock(${i})">Vendre</button>
+<canvas id="chart${i}" height="120"></canvas>
+`;
+marketsDiv.appendChild(div);
+
+let ctx=document.getElementById("chart"+i).getContext("2d");
+m.chart=new Chart(ctx,{
+type:"line",
+data:{labels:[],datasets:[{data:[],borderWidth:2,tension:0.3}]},
+options:{
+responsive:true,
+animation:false,
+plugins:{legend:{display:false}},
+scales:{x:{display:false},y:{display:false}}
+}
+});
+});
+
+/* ===== STOCK ===== */
+function buyStock(i){
+let amount=parseInt(document.getElementById("amount"+i).value)||0;
+let cost=markets[i].price*amount;
+if(money>=cost){
+money-=cost;
+markets[i].stocks+=amount;
+showIndicator("+$"+format(cost), document.getElementById("clickBtn"));
+}
+update();
+}
+
+function sellStock(i){
+let amount=parseInt(document.getElementById("amount"+i).value)||0;
+if(markets[i].stocks>=amount){
+let gain = markets[i].price*amount;
+money += gain;
+markets[i].stocks-=amount;
+showIndicator("+$"+format(gain), document.getElementById("clickBtn"));
+}
+update();
+}
+
+/* ===== INVESTMENTS ===== */
+const investmentsData=[
+["Startup",10000,100],
+["Restaurant",25000,300],
+["Usine",50000,700],
+["Centre commercial",200000,2500],
+["Banque",1000000,10000],
+["Hedge Fund",5000000,40000],
+["Data Center",15000000,120000],
+["Compagnie aérienne",50000000,500000],
+["Multinationale",200000000,2000000],
+["Conglomérat mondial",1000000000,10000000],
+["Satellite Network",5000000000,50000000],
+["Mega Corporation",20000000000,200000000],
+["Global Alliance",100000000000,1000000000],
+["Quantum Finance",300000000000,3000000000],
+["Interstellar Trade",800000000000,10000000000]
+];
+
+const investDiv=document.getElementById("investments");
+
+investmentsData.forEach(inv=>{
+let btn=document.createElement("button");
+btn.innerText=`${inv[0]} (${format(inv[1])}$)`;
+btn.onclick=()=>{
+if(money>=inv[1]){
+money-=inv[1];
+passive+=inv[2];
+showIndicator("+$"+format(inv[1]), document.getElementById("clickBtn"));
+log("🏢 "+inv[0]+" acquis !");
+update();
+}
+};
+investDiv.appendChild(btn);
+});
+
+/* ===== UPGRADES ===== */
+const upgradesData=[
+["Dividendes x2",2000000,()=>{dividendBoost*=2}],
+["Réduction Crash",5000000,()=>{crashReduction=0.5}],
+["IA Marché",10000000,()=>{marketAI=true}],
+["Super Prestige",50000000,()=>{superPrestige=true}],
+["Réduction taxe",250000,()=>{taxRate=0.005; updateTaxDisplay();}]
+];
+
+const upgradesDiv=document.getElementById("upgrades");
+
+upgradesData.forEach(up=>{
+let btn=document.createElement("button");
+btn.innerText=`${up[0]} (${format(up[1])}$)`;
+btn.onclick=()=>{
+if(money>=up[1]){
+money-=up[1];
+up[2]();
+showIndicator(up[0]+" activé !", document.getElementById("clickBtn"));
+log("🔧 "+up[0]+" activé !");
+update();
+}
+};
+upgradesDiv.appendChild(btn);
+});
+
+function clickMoney(){
+money+=clickValue;
+showIndicator("+$"+format(clickValue), document.getElementById("clickBtn"));
+update();
+}
+
+function upgradeClick(){
+if(money>=doubleCost){
+money-=doubleCost;
+clickValue*=2;
+doubleCost=Math.floor(doubleCost*2.5);
+showIndicator("⚡ Click x2!", document.getElementById("clickBtn"));
+}
+update();
+}
+
+setInterval(()=>{
+money -= money*taxRate;
+
+markets.forEach((m,i)=>{
+let old=m.price;
+m.price+=Math.random()*m.vol - m.vol/2;
+if(m.price<10) m.price=10;
+
+if(Math.random()<0.02*(1-crashReduction)){
+m.price*=0.85;
+log("💥 Crash sur "+m.name);
+}
+
+money+=m.stocks*(m.price*0.001)*dividendBoost;
+
+m.history.push(m.price);
+if(m.history.length>50) m.history.shift();
+
+let color=m.price>=old?"#22c55e":"#ef4444";
+
+m.chart.data.labels=m.history.map((_,x)=>x);
+m.chart.data.datasets[0].data=m.history;
+m.chart.data.datasets[0].borderColor=color;
+m.chart.update();
+
+document.getElementById("price"+i).innerText=format(m.price);
+document.getElementById("stocks"+i).innerText=format(m.stocks);
+});
+money+=passive;
+update();
+},1000);
+
+function update(){
+document.getElementById("money").innerText=format(money);
+document.getElementById("passive").innerText=format(passive);
+document.getElementById("nextDouble").innerText=format(doubleCost);
+
+let percent=(money/winGoal)*100;
+if(percent>100) percent=100;
+document.getElementById("bar").style.width=percent+"%";
+}
+
+function log(msg){
+document.getElementById("log").innerText=msg;
+}
+
+function showIndicator(text, parent){
+let span=document.createElement("div");
+span.className="click-indicator";
+span.innerText=text;
+parent.appendChild(span);
+setTimeout(()=>{span.remove();},2000);
+}
+
+updateTaxDisplay();
+</script>
+</body>
+</html>
